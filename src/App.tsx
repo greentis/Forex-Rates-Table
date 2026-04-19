@@ -1,12 +1,22 @@
 import React, { useEffect, useState } from "react";
+import { generateClient } from "aws-amplify/api";
 import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
 
 const client = generateClient<Schema>();
 
 interface AppProps {}
+interface TableProps {
+  RawData: { [key: string]: number };
+  ProcessedData: { [key: string]: string };
+}
 
-const API_URL = "https://api.apilayer.com/fixer/latest";
+interface ExchangeRatesData {
+  success: boolean;
+  timestamp: number;
+  base: string;
+  date: string;
+  rates: Record<string, number>;
+}
 
 const data = {
     "success": true,
@@ -190,6 +200,7 @@ const data = {
 };
 
 function countDecimalPlaces(value: number): number {
+    // Count the number of decimal places, to handle floating point precision issues
     if (!Number.isFinite(value)) {
         throw new Error(`Input must be a finite number ${value}`);
     }
@@ -210,42 +221,13 @@ function countDecimalPlaces(value: number): number {
 }
 
 function checkEven(value: string): boolean {
-    const lastDigit = value.slice(-1);
-    return ["0", "2", "4", "6", "8"].includes(lastDigit);
+  // Check if the last digit of the string is even
+  const lastDigit = value.slice(-1);
+  return ["0", "2", "4", "6", "8"].includes(lastDigit);
 }
 
-const App: React.FC<AppProps> = () => {
-  const [result, setResult] = useState(data);
-  const [rawFixer, setRawFixer] = useState<{ [key: string]: number }>({});
-  const [processedFixer, setProcessedFixer] = useState<{ [key: string]: string }>({});
-
-  useEffect(()=>{
-    async function fetchData() {
-      //   const response = await fetch(API_URL, {
-      //     headers: {
-      //       apikey : "" 
-      //     }
-      //   }
-      // ).then(res => res.json().then(data => {
-      //   setResult(data);
-      //   console.log(data);
-      // }));
-
-    }
-
-    fetchData();
-
-    setRawFixer(result["rates"]);
-    var rawFixerCopy: { [key: string]: number } = result["rates"];
-    var processed: { [key: string]: string } = {};
-    for (const key in rawFixerCopy) {
-      processed[key] = (rawFixerCopy[key] + 10.0002).toFixed(Math.max(countDecimalPlaces(rawFixerCopy[key]), 4));
-    }
-    setProcessedFixer(processed);
-  }, []);
-
-  return (
-    <main>
+const TableData: React.FC<TableProps> = ({ RawData, ProcessedData }) => {
+    return (
       <table>
         <thead>
           <tr>
@@ -255,15 +237,60 @@ const App: React.FC<AppProps> = () => {
           </tr>
         </thead>
         <tbody>
-          {Object.keys(rawFixer).map(key => (
+          {Object.keys(RawData).map(key => (
             <tr key={key} className={key ==="HKD" ? "highlight" : "no-highlight"}>
               <td>{key}</td>
-              <td className={checkEven(processedFixer[key]) ? "highlight" : "no-highlight"}>{rawFixer[key]}</td>
-              <td className={checkEven(processedFixer[key]) ? "highlight" : "no-highlight"}>{processedFixer[key]}</td>
+              <td className={checkEven(ProcessedData[key]) ? "highlight" : "no-highlight"}>{RawData[key]}</td>
+              <td className={checkEven(ProcessedData[key]) ? "highlight" : "no-highlight"}>{ProcessedData[key]}</td>
             </tr>
           ))}
         </tbody>
       </table>
+    );
+}
+
+const App: React.FC<AppProps> = () => {
+  const [result, setResult] = useState<ExchangeRatesData>(data);
+  const [rawFixer, setRawFixer] = useState<{ [key: string]: number }>({});
+  const [processedFixer, setProcessedFixer] = useState<{ [key: string]: string }>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    const fetchRates = async () => {
+      // Fetch data from the graphql endpoint using the generated client
+      let res = await client.queries.fetchData({});
+
+      if (!res.data) {
+        console.error("Failed to fetch exchange rates:", res.errors ? res.errors['0'] : "Unknown error");
+        return;
+      }
+
+      let response = res.data as ExchangeRatesData;
+      console.log(response);
+
+      setResult(response);
+      
+      if (!response.rates) {
+        console.error("No rates found in response:", response);
+      }
+    }
+
+    fetchRates().then(() => setLoading(false))
+
+    setRawFixer(result['rates']);
+    let rawFixerCopy: { [key: string]: number } = result["rates"];
+    let processed: { [key: string]: string } = {};
+    for (const key in rawFixerCopy) {
+      processed[key] = (rawFixerCopy[key] + 10.0002).toFixed(Math.max(countDecimalPlaces(rawFixerCopy[key]), 4));
+    }
+    setProcessedFixer(processed);
+  }, []);
+
+  return (
+    <main>
+      {
+        loading ? <p>Loading...</p> : <TableData RawData={rawFixer} ProcessedData={processedFixer} />
+      }
     </main>
   );
 }
