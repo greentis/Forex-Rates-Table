@@ -5,7 +5,13 @@ import { Amplify } from "aws-amplify";
 import "./index.css";
 import outputs from "../amplify_outputs.json";
 
-Amplify.configure(outputs);
+if (outputs) {
+  Amplify.configure(outputs);
+}
+else {
+  console.error("Amplify outputs not found. Please ensure amplify_outputs.json is generated and contains the necessary configuration.");
+}
+
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
